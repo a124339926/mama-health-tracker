@@ -23,3 +23,23 @@ it("exports a real XLSX retaining raw values, blanks and safe text notes", async
   expect(sheet.getCell("J2").value).toBe("=SYNTHETIC(1)");
   expect(sheet.getCell("J2").type).toBe(ExcelJS.ValueType.String);
 });
+it("exports the first raw snapshot separately from a later correction", async () => {
+  const r = {
+    ...emptyReading(),
+    weight_kg: 60,
+    glucose_mmol: 6,
+    glucose_mg_reported: 108,
+    notes: "corrected",
+    original_data: {
+      glucose_mmol: null,
+      glucose_mg_reported: null,
+      notes: "first synthetic note",
+    },
+  };
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(await workbookBuffer([r]));
+  const sheet = book.getWorksheet("健康紀錄")!;
+  expect(sheet.getCell("M2").value).toBeNull();
+  expect(sheet.getCell("N2").value).toBeNull();
+  expect(sheet.getCell("O2").value).toBe("first synthetic note");
+});

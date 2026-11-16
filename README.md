@@ -39,3 +39,5 @@ CSV 原檔保存在 Downloads 或其他私人目錄，不得放進本專案。�
 先用合成資料驗證兩個家屬帳戶的 RLS 隔離、viewer 禁止修改、撤銷立即生效、登入回跳、手機日期補登、修改保留原始註記、真正 XLSX 匯出。LINE 先驗空事件簽章，再逐項及快速填寫，確認前不寫入、確認後只新增一筆；重送同一事件不重複新增。驗證 LIFF 顯示相同日記，提醒與漏登提醒各實際收一則。完成後再匯入私人歷史，核對筆數及原始註記。未完成的遠端驗證不得描述為已通過。
 
 本次部署：Mother's Health（gwoddgjtlhkwnqkzaszu）隸屬 Mama Health；網站 https://a124339926.github.io/mama-health-tracker/；LINE 官方帳號 @119twvkx；LIFF 2012641344-XEQG0wC1。排程設定見 supabase/schedule.sql，密鑰另存 Vault。
+
+首次登記的完整原始值另存 original_data，資料庫觸發器禁止後續修改覆蓋此快照。歷史紀錄在修正後仍顯示首次原始血糖與註記；Excel 另列首次原始雙單位與註記，空白原始數值維持空白。

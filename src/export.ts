@@ -16,6 +16,9 @@ export async function workbookBuffer(rows: Reading[]) {
     "原始註記／備註",
     "來源",
     "來源識別碼",
+    "首次登記血糖 mmol/L",
+    "首次登記血糖 mg/dL",
+    "首次原始註記",
   ]);
   for (const r of rows) {
     sheet.addRow([
@@ -33,6 +36,11 @@ export async function workbookBuffer(rows: Reading[]) {
       r.notes,
       r.source,
       r.source_key,
+      r.original_data ? r.original_data.glucose_mmol ?? null : r.glucose_mmol,
+      r.original_data
+        ? r.original_data.glucose_mg_reported ?? null
+        : r.glucose_mg_reported,
+      r.original_data?.notes ?? r.notes,
     ]);
   }
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -41,9 +49,11 @@ export async function workbookBuffer(rows: Reading[]) {
     pattern: "solid",
     fgColor: { argb: "FF2F795D" },
   };
-  sheet.columns.forEach((c, i) => c.width = i === 9 ? 55 : i === 11 ? 36 : 18);
+  sheet.columns.forEach((c, i) =>
+    c.width = i === 9 || i === 14 ? 55 : i === 11 ? 36 : 18
+  );
   sheet.views = [{ state: "frozen", ySplit: 1 }];
-  sheet.autoFilter = "A1:L1";
+  sheet.autoFilter = "A1:O1";
   return await book.xlsx.writeBuffer();
 }
 export async function excel(rows: Reading[], month: string) {

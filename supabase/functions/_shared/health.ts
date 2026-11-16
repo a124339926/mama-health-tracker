@@ -12,6 +12,11 @@ export type Reading = {
   diastolic: number | null;
   pulse: number | null;
   notes: string;
+  original_data?: {
+    glucose_mmol?: number | null;
+    glucose_mg_reported?: number | null;
+    notes?: string;
+  } | null;
   source?: string;
   source_key?: string | null;
 };

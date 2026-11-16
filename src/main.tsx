@@ -386,6 +386,25 @@ function App() {
                         <p>原始血糖：{r.glucose_mg_reported} mg/dL</p>
                       )}
                       {r.notes && <p className="original-note">{r.notes}</p>}
+                      {r.original_data &&
+                        (r.original_data.glucose_mmol !== r.glucose_mmol ||
+                          r.original_data.glucose_mg_reported !==
+                            r.glucose_mg_reported ||
+                          r.original_data.notes !== r.notes) &&
+                        (
+                          <div className="original-note">
+                            <p>
+                              首次原始血糖：{fmt(r.original_data.glucose_mmol)}
+                              {" "}
+                              mmol/L／{fmt(r.original_data.glucose_mg_reported)}
+                              {" "}
+                              mg/dL
+                            </p>
+                            <p>
+                              首次原始註記：{r.original_data.notes || "未填寫"}
+                            </p>
+                          </div>
+                        )}
                       {data.role !== "viewer" && (
                         <button
                           className="btn secondary"

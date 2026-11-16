@@ -23,6 +23,21 @@ beforeAll(async () => {
   );
 }, 30000);
 afterAll(async () => db?.close());
+it("keeps the first raw reading and notes even when an editor changes the record", async () => {
+  const result = await asUser(
+    owner,
+    `update public.readings set notes='edited synthetic note',glucose_mmol=6,original_data='{}' where patient_id='${patient}' returning original_data`,
+  );
+  expect(
+    (result.rows[0] as {
+      original_data: { notes: string; glucose_mmol: number | null };
+    }).original_data.notes,
+  ).toBe("synthetic");
+  expect(
+    (result.rows[0] as { original_data: { glucose_mmol: number | null } })
+      .original_data.glucose_mmol,
+  ).toBeNull();
+});
 async function asUser(uid: string, sql: string) {
   await db.exec("begin");
   try {
