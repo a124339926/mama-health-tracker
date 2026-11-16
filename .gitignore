@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env*
+!.env.example
+private/
+*.csv
+*.xlsx
+*.zip
+*.log
+artifacts/
+.supabase/
+*.tsbuildinfo

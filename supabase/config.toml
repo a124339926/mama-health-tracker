@@ -1,0 +1,8 @@
+project_id = "mama-health-tracker"
+
+[functions.health-api]
+verify_jwt = false
+[functions.line-webhook]
+verify_jwt = false
+[functions.reminders]
+verify_jwt = false
