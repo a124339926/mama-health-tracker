@@ -8,7 +8,7 @@ Node 24、pnpm 11.25.0。`pnpm install --frozen-lockfile`，複製 `.env.example
 
 ## 獨立 Supabase
 
-限定 Mama Health 組織、獨立專案、東京 ap-northeast-1、Free。不可連結或部署至 whisper-time。專案建立後，檢查 CLI `--help`，以明確的 Mama Health 專案 ref 部署遷移與三個 Edge Functions。不得以其他既有專案替代。部署前確認遠端 ref、組織與方案。
+限定 Mama Health 組織、獨立專案、本次實際使用雪梨 ap-southeast-2、Free。不可連結或部署至 whisper-time。專案建立後，檢查 CLI `--help`，以明確的 Mama Health 專案 ref 部署遷移與三個 Edge Functions。不得以其他既有專案替代。部署前確認遠端 ref、組織與方案。
 
 `supabase/migrations` 建立日記、家屬角色、測量紀錄、一次性邀請碼、LINE 綁定、聊天草稿與提醒去重表。所有表啟用 RLS。viewer 只能讀；editor 可新增及修改；owner 可管理成員。敏感 LINE 身分與邀請碼表不授權一般客戶端讀取。服務端 API 每次重新檢查家屬角色。LIFF 必須由 LINE 官方 API 驗證 ID token，不信任前端傳來的 user ID。
 
@@ -22,7 +22,7 @@ Auth 設定 Site URL 與 Redirect URLs 指向正式網站完整路徑。家屬�
 
 由網頁管理者產生 LINE 綁定碼，媽媽在一對一聊天室輸入「綁定 代碼」。不在群組或多人聊天室回覆健康資料。輸入「登記」逐項填日期、空腹／餐後、血糖與單位、體重、血壓、心率；每次最後必須回覆「確認儲存」。回覆「表單」開啟 LIFF。快速格式：`快速 YYYY-MM-DD 空腹 100 mg/dL 60 120/80 70`（說明數值為合成範例）。草稿 30 分鐘未使用會失效。
 
-提醒預設關閉，管理者可在網頁開啟並設定台北時間。排程每 10 分鐘 POST 到 `reminders`，Authorization 使用 `Bearer <REMINDER_SECRET>`。可用 Supabase Cron + Vault 安全保存密鑰；不可將密鑰直接寫入 SQL、GitHub 工作流程或公開網址。排程只在設定的小時發送，當日已有任一紀錄則跳過漏登提醒，資料庫唯一鍵與 LINE retry key 防止重複推播。推播不包含測量數值。失敗重試限該小時內，超過時段不補發，需在維運紀錄檢查 failed。LINE 免費訊息額度需由官方帳號後台確認，任何付費升級先取得使用者同意。
+提醒預設關閉，管理者可在網頁開啟並設定台北時間。排程每 10 分鐘 POST 到 `reminders`，Authorization 使用 `Bearer <REMINDER_SECRET>`。可用 Supabase Cron + Vault 安全保存密鑰；不可將密鑰寫入提交的 SQL、GitHub 工作流程或公開網址。排程只在設定的小時發送，當日已有任一紀錄則跳過漏登提醒，資料庫唯一鍵與 LINE retry key 防止重複推播。推播不包含測量數值。失敗重試限該小時內，超過時段不補發，需在維運紀錄檢查 failed。LINE 免費訊息額度需由官方帳號後台確認，任何付費升級先取得使用者同意。
 
 ## 私人歷史匯入
 
@@ -37,3 +37,5 @@ CSV 原檔保存在 Downloads 或其他私人目錄，不得放進本專案。�
 ## 上線驗收
 
 先用合成資料驗證兩個家屬帳戶的 RLS 隔離、viewer 禁止修改、撤銷立即生效、登入回跳、手機日期補登、修改保留原始註記、真正 XLSX 匯出。LINE 先驗空事件簽章，再逐項及快速填寫，確認前不寫入、確認後只新增一筆；重送同一事件不重複新增。驗證 LIFF 顯示相同日記，提醒與漏登提醒各實際收一則。完成後再匯入私人歷史，核對筆數及原始註記。未完成的遠端驗證不得描述為已通過。
+
+本次部署：Mother's Health（gwoddgjtlhkwnqkzaszu）隸屬 Mama Health；網站 https://a124339926.github.io/mama-health-tracker/；LINE 官方帳號 @119twvkx；LIFF 2012641344-XEQG0wC1。排程設定見 supabase/schedule.sql，密鑰另存 Vault。

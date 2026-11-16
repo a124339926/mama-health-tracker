@@ -9,4 +9,5 @@ private/
 *.log
 artifacts/
 .supabase/
+supabase/.temp/
 *.tsbuildinfo
