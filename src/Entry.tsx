@@ -111,8 +111,8 @@ export function Entry(
                   };
                   // Keep the original dual-unit reading unless the glucose itself was edited.
                   if (
-                    g === initial.glucose_mmol && f.get("unit") === "mmol/L"
-                  ) value.glucose_mg_reported = initial.glucose_mg_reported;
+                    g === working.glucose_mmol && f.get("unit") === "mmol/L"
+                  ) value.glucose_mg_reported = working.glucose_mg_reported;
                   setWorking(value);
                   setReview(validateReading(value));
                 } catch (err) {
