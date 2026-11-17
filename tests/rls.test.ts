@@ -24,8 +24,7 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => db?.close());
 it("keeps the first raw reading and notes even when an editor changes the record", async () => {
-  const result = await asUser(
-    owner,
+  const result = await db.query(
     `update public.readings set notes='edited synthetic note',glucose_mmol=6,original_data='{}' where patient_id='${patient}' returning original_data`,
   );
   expect(
@@ -49,47 +48,14 @@ async function asUser(uid: string, sql: string) {
     await db.exec("rollback");
   }
 }
-it("outsider cannot read another family records", async () =>
-  expect((await asUser(outsider, "select * from public.readings")).rows)
-    .toHaveLength(0));
-it("viewer may read but cannot write", async () => {
-  expect((await asUser(viewer, "select * from public.readings")).rows)
-    .toHaveLength(1);
-  await expect(
-    asUser(
-      viewer,
-      `insert into public.readings(patient_id,measured_on,measurement_type,weight_kg) values('${patient}','2026-10-02','fasting',60)`,
-    ),
-  ).rejects.toThrow();
+it("legacy email sessions including the former owner have no table access", async () => {
+  for (const uid of [owner, viewer, editor, outsider]) {
+    for (const table of ["patients", "members", "readings", "line_members"]) {
+      await expect(asUser(uid, "select * from public." + table)).rejects
+        .toThrow();
+    }
+  }
 });
-it("editor can write only to their family", async () => {
-  await expect(
-    asUser(
-      editor,
-      `insert into public.readings(patient_id,measured_on,measurement_type,weight_kg) values('${patient}','2026-10-02','fasting',60)`,
-    ),
-  ).resolves.toBeDefined();
-  await expect(
-    asUser(
-      editor,
-      `insert into public.readings(patient_id,measured_on,measurement_type,weight_kg) values('${other}','2026-10-02','fasting',60)`,
-    ),
-  ).rejects.toThrow();
-});
-it("cannot move a reading to another family", async () =>
-  await expect(
-    asUser(
-      owner,
-      `update public.readings set patient_id='${other}' where patient_id='${patient}'`,
-    ),
-  ).rejects.toThrow());
-it("membership cannot be escalated by the caller", async () =>
-  await expect(
-    asUser(
-      viewer,
-      `update public.members set role='owner' where user_id='${viewer}'`,
-    ),
-  ).rejects.toThrow());
 it("anonymous visitors have no table access", async () => {
   await db.exec("begin;set local role anon");
   try {
@@ -115,14 +81,71 @@ it("private codes and LINE identities are inaccessible", async () => {
 it("privileged provisioning RPC is not publicly executable", async () =>
   await expect(asUser(owner, `select public.create_household('${owner}','no')`))
     .rejects.toThrow());
-it("revoking membership immediately removes access", async () => {
-  await db.exec(`delete from public.members where user_id='${viewer}'`);
-  expect((await asUser(viewer, "select * from public.readings")).rows)
-    .toHaveLength(0);
+it("LINE invitation roles are single-use, preserve owners, and revocation removes bot access", async () => {
+  await db.exec(
+    `insert into public.line_members values('${patient}','line-owner','owner');
+    insert into public.invites(hash,patient_id,role) values('viewer-code','${patient}','viewer'),('editor-code','${patient}','editor');`,
+  );
+  await db.query(
+    "select public.accept_line_invite('viewer-code','line-viewer')",
+  );
+  expect(
+    (await db.query(
+      "select role from public.line_members where line_user_id='line-viewer'",
+    )).rows,
+  ).toEqual([{ role: "viewer" }]);
+  await expect(
+    db.query("select public.accept_line_invite('viewer-code','another-line')"),
+  ).rejects.toThrow();
+  await expect(
+    db.query(
+      "select public.commit_bot_event('viewer-save','line-viewer',0,null,'saved',null)",
+    ),
+  ).rejects.toThrow();
+  await db.query(
+    "select public.accept_line_invite('editor-code','line-editor')",
+  );
+  await expect(
+    db.query(
+      `select public.revoke_line_member('${patient}','line-viewer','line-editor')`,
+    ),
+  ).rejects.toThrow();
+  await db.query(
+    `select public.revoke_line_member('${patient}','line-owner','line-editor')`,
+  );
+  expect(
+    (await db.query(
+      "select * from public.line_members where line_user_id='line-editor'",
+    )).rows,
+  ).toHaveLength(0);
+  expect(
+    (await db.query(
+      "select * from public.line_accounts where line_user_id='line-editor'",
+    )).rows,
+  ).toHaveLength(0);
+  await expect(
+    db.query(
+      `select public.revoke_line_member('${patient}','line-owner','line-owner')`,
+    ),
+  ).rejects.toThrow();
+});
+it("new LINE owners create only their own diary and cannot claim existing records", async () => {
+  const created = await db.query<{ id: string }>(
+    "select public.create_line_household('new-line','Synthetic new') as id",
+  );
+  expect(created.rows[0].id).not.toBe(patient);
+  await expect(
+    db.query("select public.create_line_household('new-line','duplicate')"),
+  ).rejects.toThrow();
+  expect(
+    (await db.query(
+      "select role from public.line_members where line_user_id='new-line'",
+    )).rows,
+  ).toEqual([{ role: "owner" }]);
 });
 it("bot commit is atomic and replay does not duplicate a reading", async () => {
   await db.exec(
-    `insert into public.line_accounts(line_user_id,patient_id) values('synthetic-line','${patient}');insert into public.bot_sessions(line_user_id) values('synthetic-line');`,
+    `insert into public.line_members values('${patient}','synthetic-line','editor');insert into public.line_accounts(line_user_id,patient_id) values('synthetic-line','${patient}');insert into public.bot_sessions(line_user_id) values('synthetic-line');`,
   );
   const saved = JSON.stringify({
     measured_on: "2026-10-03",

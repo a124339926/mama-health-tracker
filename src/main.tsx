@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { api, configured, initLine, supabase } from "./api";
+import { api, configured, initLine, loginLine, logoutLine } from "./api";
 import { Chart } from "./Chart";
 import { Entry } from "./Entry";
 import { excel } from "./export";
@@ -14,7 +14,7 @@ type Data = {
   patient: { id: string; display_name: string };
   readings: Reading[];
   role: string;
-  members: { user_id: string; role: string }[];
+  members: { line_user_id: string; role: string }[];
   links: {
     line_user_id: string;
     reminders_enabled: boolean;
@@ -49,25 +49,24 @@ function App() {
     (async () => {
       try {
         const line = await initLine();
-        const session = await supabase?.auth.getSession();
         if (!active) return;
-        setLogged(line || Boolean(session?.data.session));
-        if (line || session?.data.session) await load();
+        setLogged(line);
+        if (line) await load();
       } catch (e) {
         setError((e as Error).message);
       } finally {
         if (active) setReady(true);
       }
     })();
-    const subscription = supabase?.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setLogged(true);
-        setTimeout(() => void load(), 0);
-      }
-    });
+    const expired = () => {
+      setLogged(false);
+      setData(null);
+      setEntry(null);
+    };
+    window.addEventListener("line-session-expired", expired);
     return () => {
       active = false;
-      subscription?.data.subscription.unsubscribe();
+      window.removeEventListener("line-session-expired", expired);
     };
   }, []);
   const act = async (fn: () => Promise<void>) => {
@@ -109,7 +108,7 @@ function App() {
             className="small-link top-actions"
             onClick={() =>
               void act(async () => {
-                await supabase?.auth.signOut();
+                await logoutLine();
                 setData(null);
                 setLogged(false);
                 location.href = location.pathname;
@@ -146,38 +145,18 @@ function App() {
           : !logged
           ? (
             <section className="auth-panel">
-              <h2>家屬安心登入</h2>
-              <p>請用自己的電子郵件登入。只有經授權的家屬能查看紀錄。</p>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const email = String(
-                    new FormData(e.currentTarget).get("email"),
-                  );
-                  void act(async () => {
-                    const res = await supabase!.auth.signInWithOtp({
-                      email,
-                      options: {
-                        emailRedirectTo: location.origin + location.pathname,
-                      },
-                    });
-                    if (res.error) throw Error("登入信未寄出，請稍後再試");
-                    setNotice("已寄出登入連結，請到電子郵件開啟。");
-                  });
-                }}
+              <h2>用 LINE 開啟健康日記</h2>
+              <p>
+                使用自己的 LINE
+                登入，輕鬆記錄與查看。家屬首次加入時，再輸入管理者提供的邀請碼。
+              </p>
+              <button
+                className="btn primary"
+                disabled={busy}
+                onClick={() => void act(loginLine)}
               >
-                <label>
-                  電子郵件<input
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                  />
-                </label>
-                <button className="btn primary full" disabled={busy}>
-                  寄送登入連結
-                </button>
-              </form>
+                使用 LINE 登入
+              </button>
             </section>
           )
           : !data
@@ -456,8 +435,8 @@ function App() {
                     </p>
                   )}
                   {data.members.map((m) => (
-                    <p key={m.user_id}>
-                      帳號 {m.user_id.slice(0, 8)}…：{{
+                    <p key={m.line_user_id}>
+                      LINE 帳號 …{m.line_user_id.slice(-6)}：{{
                         owner: "管理者",
                         editor: "可編輯",
                         viewer: "只能查看",
@@ -467,7 +446,7 @@ function App() {
                           disabled={busy}
                           onClick={() =>
                             void act(async () => {
-                              await api("revoke", { userId: m.user_id });
+                              await api("revoke", { lineId: m.line_user_id });
                               await load();
                             })}
                         >
@@ -535,7 +514,7 @@ function App() {
                             await load();
                           })}
                       >
-                        解除 LINE 綁定
+                        停用聊天室與提醒
                       </button>
                     </form>
                   ))}

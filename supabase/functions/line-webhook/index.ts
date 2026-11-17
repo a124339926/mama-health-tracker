@@ -89,9 +89,9 @@ Deno.serve(async (req) => {
       ) continue;
       const text = event.message.text?.trim() || "";
       if (text.startsWith("綁定 ")) {
-        const result = await client.rpc("accept_invite", {
+        const result = await client.rpc("accept_line_invite", {
           code_hash: await sha256(text.slice(3).trim()),
-          line_actor: lid,
+          actor: lid,
         });
         await reply(
           event.replyToken,
@@ -118,6 +118,19 @@ Deno.serve(async (req) => {
         await reply(
           event.replyToken,
           "開啟登記表單：https://liff.line.me/" + required("LIFF_ID"),
+        );
+        continue;
+      }
+      const member = check(
+        await client.from("line_members").select("role").eq(
+          "patient_id",
+          account.patient_id,
+        ).eq("line_user_id", lid).maybeSingle(),
+      );
+      if (!member || member.role === "viewer") {
+        await reply(
+          event.replyToken,
+          "目前沒有編輯權限。請回覆「表單」查看日記，或請管理者授權。",
         );
         continue;
       }

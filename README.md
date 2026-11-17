@@ -14,7 +14,7 @@ Node 24、pnpm 11.25.0。`pnpm install --frozen-lockfile`，複製 `.env.example
 
 在 Supabase Edge Function secrets 設定：`APP_ORIGIN`、`LINE_LOGIN_CHANNEL_ID`、`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、`LIFF_ID`、`REMINDER_SECRET`。`SUPABASE_URL` 及 `SUPABASE_SERVICE_ROLE_KEY` 使用平台內建環境變數。密鑰不進 VITE、不進 GitHub、不貼聊天。APP_ORIGIN 是正式網址的 origin，不含路徑。
 
-Auth 設定 Site URL 與 Redirect URLs 指向正式網站完整路徑。家屬先以 Email 登入，建立日記，產生 15 分鐘單次 viewer/editor 邀請碼；其他家屬登入後貼碼加入。owner 可撤銷家屬及 LINE 綁定。初次匯入前必須建立日記，取得真正的 patient UUID。
+網站與 LIFF 統一使用 LINE 登入，不需電子郵件。服務端驗證 LINE ID token 的簽章（官方 verify API）、issuer、audience 與到期時間，依 line_members 授權。一般 anon/authenticated 角色沒有健康資料表存取權；舊電子郵件 session 也不能存取。管理者產生 15 分鐘單次 viewer/editor 邀請碼，家屬以自己的 LINE 登入後貼碼加入，同時連接聊天室。撤銷成員會同步移除網站、聊天室與提醒權限；停用聊天室則保留網站權限。舊管理者轉換需由管理員在私人作業中將已驗證的 LINE 身分對應到原日記，禁止以首次登入自動認領舊資料。
 
 ## LINE
 

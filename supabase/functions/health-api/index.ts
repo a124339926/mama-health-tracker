@@ -1,3 +1,4 @@
+import { LoginError } from "../_shared/line-auth.ts";
 import { actor, check, db, json } from "../_shared/server.ts";
 import { sha256, validateReading } from "../_shared/health.ts";
 Deno.serve(async (req) => {
@@ -9,38 +10,34 @@ Deno.serve(async (req) => {
     const b = await req.json();
     const who = await actor(req, b);
     const client = db();
-    if (b.action === "create" && who.uid) {
+    if (b.action === "create") {
       return json(req, {
         patientId: check(
-          await client.rpc("create_household", {
-            actor: who.uid,
+          await client.rpc("create_line_household", {
+            actor: who.lineId,
             label: "媽媽",
           }),
         ),
       });
     }
-    if (b.action === "join" && who.uid) {
+    if (b.action === "join") {
       return json(req, {
         patientId: check(
-          await client.rpc("accept_invite", {
+          await client.rpc("accept_line_invite", {
             code_hash: await sha256(String(b.code)),
-            actor: who.uid,
+            actor: who.lineId,
           }),
         ),
       });
     }
-    const membership = who.uid
-      ? check(
-        await client.from("members").select("patient_id,role").eq(
-          "user_id",
-          who.uid,
-        ),
-      )
-      : null;
-    const pid = b.patientId || who.patientId || membership?.[0]?.patient_id;
-    const role = who.lineId && who.patientId === pid
-      ? "editor"
-      : membership?.find((m) => m.patient_id === pid)?.role;
+    const membership = check(
+      await client.from("line_members").select("patient_id,role").eq(
+        "line_user_id",
+        who.lineId,
+      ),
+    );
+    const pid = b.patientId || membership?.[0]?.patient_id;
+    const role = membership?.find((m) => m.patient_id === pid)?.role;
     if (!role) {
       return json(
         req,
@@ -59,7 +56,7 @@ Deno.serve(async (req) => {
       );
       const members = role === "owner"
         ? check(
-          await client.from("members").select("user_id,role").eq(
+          await client.from("line_members").select("line_user_id,role").eq(
             "patient_id",
             pid,
           ),
@@ -123,12 +120,13 @@ Deno.serve(async (req) => {
       );
       return json(req, { code });
     }
-    if (b.action === "revoke" && role === "owner" && b.userId !== who.uid) {
+    if (b.action === "revoke" && role === "owner") {
       check(
-        await client.from("members").delete().eq("patient_id", pid).eq(
-          "user_id",
-          b.userId,
-        ).neq("role", "owner"),
+        await client.rpc("revoke_line_member", {
+          patient: pid,
+          actor: who.lineId,
+          target: b.lineId,
+        }),
       );
       return json(req, { ok: true });
     }
@@ -141,7 +139,9 @@ Deno.serve(async (req) => {
       );
       return json(req, { ok: true });
     }
-    if (b.action === "reminders" && (role === "owner" || who.lineId)) {
+    if (
+      b.action === "reminders" && (role === "owner" || b.lineId === who.lineId)
+    ) {
       const daily = Number(b.daily), missed = Number(b.missed);
       if (
         !Number.isInteger(daily) || !Number.isInteger(missed) || daily < 0 ||
@@ -152,12 +152,18 @@ Deno.serve(async (req) => {
           reminders_enabled: b.enabled === true,
           daily_hour: daily,
           missed_hour: missed,
-        }).eq("patient_id", pid).eq("line_user_id", who.lineId || b.lineId),
+        }).eq("patient_id", pid).eq(
+          "line_user_id",
+          role === "owner" ? b.lineId : who.lineId,
+        ),
       );
       return json(req, { ok: true });
     }
     return json(req, { error: "沒有此操作的權限" }, 403);
-  } catch {
+  } catch (error) {
+    if (error instanceof LoginError) {
+      return json(req, { error: error.message }, 401);
+    }
     return json(req, {
       error: "操作未完成。請檢查登入、邀請碼、數值或網路後再試。",
     }, 400);
