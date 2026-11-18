@@ -15,11 +15,18 @@ export function Chart(
       color,
       points: rows.filter((r) =>
         (!kind || r.measurement_type === kind) && typeof r[key] === "number"
-      ).map((r) => [Number(r.measured_on.slice(-2)), r[key] as number]),
+      ).map((r) => {
+        const [h, m] = (r.measured_time || "00:00").split(":").map(Number);
+        return [
+          Number(r.measured_on.slice(-2)) + (60 * h + m) / 1440,
+          r[key] as number,
+        ] as [number, number];
+      }),
     });
   if (tab === "glucose") {
     series("空腹", "#2f8771", "glucose_mmol", "fasting");
     series("餐後", "#a7742b", "glucose_mmol", "postmeal");
+    series("睡前", "#815b91", "glucose_mmol", "bedtime");
     series("其他", "#657891", "glucose_mmol", "other");
   } else if (tab === "pressure") {
     series("收縮壓", "#ae5846", "systolic");
@@ -37,7 +44,7 @@ export function Chart(
     hi = Math.max(...vals) + range * .25;
   const days = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5), 0))
     .getUTCDate();
-  const x = (d: number) => 40 + (d - 1) / (days - 1) * 626,
+  const x = (d: number) => 40 + (d - 1) / days * 626,
     y = (v: number) => 15 + (hi - v) / (hi - lo) * 167;
   return (
     <>

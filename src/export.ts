@@ -24,7 +24,7 @@ export async function workbookBuffer(rows: Reading[]) {
     sheet.addRow([
       r.measured_on,
       r.measured_time || "未記時間",
-      ({ fasting: "空腹", postmeal: "餐後", other: "其他" })[
+      ({ fasting: "空腹", postmeal: "餐後", bedtime: "睡前", other: "其他" })[
         r.measurement_type
       ],
       r.glucose_mmol,

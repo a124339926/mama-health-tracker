@@ -78,3 +78,40 @@ describe("shared health boundary", () => {
     expect(await verifySignature(raw, "???", secret)).toBe(false);
   });
 });
+
+it("saves each sugar separately with Taipei time, optional extras, and no binding prompts", () => {
+  const at = new Date("2026-11-15T17:20:00Z");
+  expect(chatStep("哈囉", null).reply).not.toContain("綁定");
+  for (const label of ["空腹", "餐後", "餐後", "睡前"]) {
+    let d = chatStep("５．６", null, at).draft;
+    d = chatStep(label, d).draft;
+    expect(d?.reading.measured_time).toBe("01:20");
+    expect(d?.reading.measured_on).toBe("2026-11-16");
+    if (label === "睡前") {
+      d = chatStep("改時間", d).draft;
+      d = chatStep("22:30", d).draft;
+      d = chatStep("加體重", d).draft;
+      d = chatStep("60", d).draft;
+      expect(d?.reading).toMatchObject({
+        measurement_type: "bedtime",
+        weight_kg: 60,
+        measured_time: "22:30",
+      });
+    } else if (label === "空腹") {
+      d = chatStep("加血壓", d).draft;
+      d = chatStep("120/80 70", d).draft;
+      expect(d?.reading).toMatchObject({
+        systolic: 120,
+        diastolic: 80,
+        pulse: 70,
+      });
+    } else {expect(d?.reading).toMatchObject({
+        weight_kg: null,
+        systolic: null,
+      });}
+    expect(chatStep("確認儲存", d).save?.glucose_mmol).toBe(5.6);
+  }
+  expect(chatStep("5.6", chatStep("餐後", null).draft).draft?.step).toBe(
+    "confirm",
+  );
+});

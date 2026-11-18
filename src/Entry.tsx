@@ -3,6 +3,7 @@ import {
   describe,
   glucose,
   type Reading,
+  taipeiTime,
   today,
   validateReading,
 } from "../supabase/functions/_shared/health";
@@ -14,7 +15,11 @@ export function Entry(
   },
 ) {
   const requestId = useRef(crypto.randomUUID());
-  const [working, setWorking] = useState(initial);
+  const [working, setWorking] = useState(() =>
+    !initial.id && initial.measured_on === today()
+      ? { ...initial, measured_time: initial.measured_time ?? taipeiTime() }
+      : initial
+  );
   const ref = useRef<HTMLDialogElement>(null);
   const [review, setReview] = useState<Reading | null>(null),
     [error, setError] = useState(""),
@@ -145,6 +150,7 @@ export function Entry(
                 >
                   <option value="fasting">空腹</option>
                   <option value="postmeal">餐後</option>
+                  <option value="bedtime">睡前</option>
                   <option value="other">其他</option>
                 </select>
               </label>
@@ -166,46 +172,53 @@ export function Entry(
                   </select>
                 </label>
               </div>
-              <label>
-                體重（公斤）<input
-                  name="weight_kg"
-                  type="number"
-                  min="1"
-                  max="400"
-                  step="0.01"
-                  inputMode="decimal"
-                  defaultValue={working.weight_kg ?? ""}
-                />
-              </label>
-              <div className="form-grid">
+              <details
+                open={Boolean(
+                  working.weight_kg || working.systolic || working.pulse,
+                )}
+              >
+                <summary>加填體重、血壓或心率</summary>
                 <label>
-                  收縮壓（上壓）<input
-                    name="systolic"
+                  體重（公斤）<input
+                    name="weight_kg"
+                    type="number"
+                    min="1"
+                    max="400"
+                    step="0.01"
+                    inputMode="decimal"
+                    defaultValue={working.weight_kg ?? ""}
+                  />
+                </label>
+                <div className="form-grid">
+                  <label>
+                    收縮壓（上壓）<input
+                      name="systolic"
+                      type="number"
+                      step="1"
+                      inputMode="numeric"
+                      defaultValue={working.systolic ?? ""}
+                    />
+                  </label>
+                  <label>
+                    舒張壓（下壓）<input
+                      name="diastolic"
+                      type="number"
+                      step="1"
+                      inputMode="numeric"
+                      defaultValue={working.diastolic ?? ""}
+                    />
+                  </label>
+                </div>
+                <label>
+                  心率（次／分）<input
+                    name="pulse"
                     type="number"
                     step="1"
                     inputMode="numeric"
-                    defaultValue={working.systolic ?? ""}
+                    defaultValue={working.pulse ?? ""}
                   />
                 </label>
-                <label>
-                  舒張壓（下壓）<input
-                    name="diastolic"
-                    type="number"
-                    step="1"
-                    inputMode="numeric"
-                    defaultValue={working.diastolic ?? ""}
-                  />
-                </label>
-              </div>
-              <label>
-                心率（次／分）<input
-                  name="pulse"
-                  type="number"
-                  step="1"
-                  inputMode="numeric"
-                  defaultValue={working.pulse ?? ""}
-                />
-              </label>
+              </details>
               <label>
                 原始註記／備註<textarea
                   name="notes"

@@ -332,11 +332,13 @@ function App() {
                   })}
                 </div>
                 <div className="record-list">
-                  {[...rows].reverse().map((r) => (
+                  {[...rows].reverse().map((r, index, descending) => (
                     <article
                       className="reading-card"
                       key={r.id}
-                      id={"day-" + r.measured_on}
+                      id={descending[index - 1]?.measured_on === r.measured_on
+                        ? undefined
+                        : "day-" + r.measured_on}
                       tabIndex={-1}
                     >
                       <div className="reading-head">
@@ -348,6 +350,7 @@ function App() {
                           {{
                             fasting: "空腹",
                             postmeal: "餐後",
+                            bedtime: "睡前",
                             other: "其他",
                           }[r.measurement_type]}
                         </span>

@@ -1,4 +1,4 @@
-export type Kind = "fasting" | "postmeal" | "other";
+export type Kind = "fasting" | "postmeal" | "bedtime" | "other";
 export type Reading = {
   id?: string;
   patient_id?: string;
@@ -27,6 +27,13 @@ export const today = (now = new Date()) =>
     month: "2-digit",
     day: "2-digit",
   }).format(now);
+export const taipeiTime = (now = new Date()) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(now);
 export function validateReading(value: unknown): Reading {
   if (!value || typeof value !== "object") throw Error("請填寫測量資料");
   const r = value as Reading;
@@ -40,7 +47,9 @@ export function validateReading(value: unknown): Reading {
     r.measured_time &&
     !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(r.measured_time)
   ) throw Error("請確認測量時間");
-  if (!["fasting", "postmeal", "other"].includes(r.measurement_type)) {
+  if (
+    !["fasting", "postmeal", "bedtime", "other"].includes(r.measurement_type)
+  ) {
     throw Error("請選擇空腹或餐後");
   }
   const limits = {
@@ -98,15 +107,25 @@ export const emptyReading = (): Reading => ({
   notes: "",
 });
 export function describe(r: Reading) {
-  return `${r.measured_on} ${r.measured_time || "未記時間"}／${
-    { fasting: "空腹", postmeal: "餐後", other: "其他" }[r.measurement_type]
-  }\n血糖 ${r.glucose_mmol ?? "—"} mmol/L${
-    r.glucose_mg_reported !== null
-      ? `（原始 ${r.glucose_mg_reported} mg/dL）`
-      : ""
-  }\n體重 ${r.weight_kg ?? "—"} kg\n血壓 ${r.systolic ?? "—"}/${
-    r.diastolic ?? "—"
-  } mmHg\n心率 ${r.pulse ?? "—"} 次/分\n${r.notes}`.trim();
+  const kind = {
+    fasting: "空腹",
+    postmeal: "餐後",
+    bedtime: "睡前",
+    other: "其他",
+  }[r.measurement_type];
+  return [
+    `${r.measured_on} ${r.measured_time || "未記時間"}／${kind}`,
+    r.glucose_mmol !== null &&
+    `血糖 ${r.glucose_mmol} mmol/L${
+      r.glucose_mg_reported !== null
+        ? `（原始 ${r.glucose_mg_reported} mg/dL）`
+        : ""
+    }`,
+    r.weight_kg !== null && `體重 ${r.weight_kg} kg`,
+    r.systolic !== null && `血壓 ${r.systolic}/${r.diastolic} mmHg`,
+    r.pulse !== null && `心率 ${r.pulse} 次/分`,
+    r.notes,
+  ].filter(Boolean).join("\n");
 }
 export async function sha256(value: string) {
   return Array.from(
@@ -142,6 +161,11 @@ export async function verifySignature(
 }
 export type Draft = {
   step:
+    | "quickKind"
+    | "quickGlucose"
+    | "quickTime"
+    | "quickWeight"
+    | "quickPressure"
     | "date"
     | "kind"
     | "glucose"
@@ -151,11 +175,62 @@ export type Draft = {
     | "confirm";
   reading: Reading;
 };
+const kinds: Record<string, Kind> = {
+  空腹: "fasting",
+  餐後: "postmeal",
+  睡前: "bedtime",
+  其他: "other",
+};
+const homeButtons = [
+  "空腹",
+  "餐後",
+  "睡前",
+  "量體重",
+  "量血壓",
+  "登記",
+  "表單",
+];
+export function buttonsFor(step?: Draft["step"]) {
+  switch (step) {
+    case "quickKind":
+    case "kind":
+      return ["空腹", "餐後", "睡前", "其他", "取消"];
+    case "confirm":
+      return ["確認儲存", "改時間", "加體重", "加血壓", "取消"];
+    case "date":
+      return ["今天", "昨天", "取消"];
+    case "weight":
+    case "pressure":
+    case "pulse":
+    case "glucose":
+      return ["略過", "取消"];
+    case "quickWeight":
+    case "quickTime":
+    case "quickPressure":
+    case "quickGlucose":
+      return ["取消"];
+    default:
+      return homeButtons;
+  }
+}
+function quickReview(r: Reading): { draft: Draft; reply: string } {
+  validateReading(r);
+  return {
+    draft: { step: "confirm", reading: r },
+    reply: describe(r) + "\n請確認後儲存。",
+  };
+}
+function readSugar(text: string) {
+  const m = /^(\d+(?:\.\d+)?)\s*(mg\/dL|mmol\/L)?$/i.exec(text);
+  if (!m) throw Error("請輸入血糖數字，例如 5.6");
+  return glucose(+m[1], m[2]?.toLowerCase() === "mg/dl" ? "mg/dL" : "mmol/L");
+}
 export function chatStep(
   text: string,
   draft: Draft | null,
+  now = new Date(),
 ): { draft: Draft | null; reply: string; save?: Reading } {
-  text = text.trim();
+  text = text.normalize("NFKC").trim();
   if (text === "取消") {
     return {
       draft: null,
@@ -170,16 +245,20 @@ export function chatStep(
   }
   if (text.startsWith("快速 ")) {
     const m =
-      /^快速 (\d{4}-\d{2}-\d{2}) (空腹|餐後|其他) (\d+(?:\.\d+)?) (mmol\/L|mg\/dL) (\d+(?:\.\d+)?) (\d+)\/(\d+) (\d+)$/
+      /^快速 (\d{4}-\d{2}-\d{2}) (空腹|餐後|睡前|其他) (\d+(?:\.\d+)?) (mmol\/L|mg\/dL) (\d+(?:\.\d+)?) (\d+)\/(\d+) (\d+)$/
         .exec(text);
     if (!m) throw Error("格式：快速 2026-11-16 空腹 100 mg/dL 60 120/80 70");
     const r = validateReading({
       ...emptyReading(),
       measured_on: m[1],
-      measurement_type:
-        ({ 空腹: "fasting", 餐後: "postmeal", 其他: "other" } as const)[
-          m[2] as "空腹"
-        ],
+      measurement_type: ({
+        空腹: "fasting",
+        餐後: "postmeal",
+        睡前: "bedtime",
+        其他: "other",
+      } as const)[
+        m[2] as "空腹"
+      ],
       ...glucose(+m[3], m[4]),
       weight_kg: +m[5],
       systolic: +m[6],
@@ -192,10 +271,43 @@ export function chatStep(
     };
   }
   if (!draft) {
+    const r = {
+      ...emptyReading(),
+      measured_on: today(now),
+      measured_time: taipeiTime(now),
+    };
+    if (text === "量體重" || text === "量血壓") {
+      r.measurement_type = "other";
+      return text === "量體重"
+        ? {
+          draft: { step: "quickWeight", reading: r },
+          reply: "體重幾公斤？請輸入數字。",
+        }
+        : {
+          draft: { step: "quickPressure", reading: r },
+          reply: "請輸入上壓/下壓，例如 120/80。也可加心率，例如 120/80 70。",
+        };
+    }
+    if (kinds[text]) {
+      return {
+        draft: {
+          step: "quickGlucose",
+          reading: { ...r, measurement_type: kinds[text] },
+        },
+        reply: "血糖多少？直接輸入數字，例如 5.6。",
+      };
+    }
+    if (/^\d/.test(text)) {
+      Object.assign(r, readSugar(text));
+      validateReading(r);
+      return {
+        draft: { step: "quickKind", reading: r },
+        reply: "這筆血糖是什麼時候量的？請點空腹、餐後或睡前。",
+      };
+    }
     return {
       draft: null,
-      reply:
-        "輸入「登記」逐項填寫；也可用「快速 日期 空腹 100 mg/dL 60 120/80 70」。未綁定請先在網頁產生代碼，再輸入「綁定 代碼」。",
+      reply: "直接輸入血糖數字，或點「空腹」「餐後」「睡前」開始。",
     };
   }
   const r = { ...draft.reading };
@@ -205,6 +317,32 @@ export function chatStep(
     return +text;
   };
   switch (draft.step) {
+    case "quickKind":
+      if (!kinds[text]) throw Error("請點選這次的測量時機。");
+      r.measurement_type = kinds[text];
+      return quickReview(r);
+    case "quickGlucose":
+      Object.assign(r, readSugar(text));
+      return quickReview(r);
+    case "quickTime":
+      if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(text)) {
+        throw Error("請輸入實際測量時間，例如 14:30。");
+      }
+      r.measured_time = text.padStart(5, "0");
+      return quickReview(r);
+    case "quickWeight":
+      r.weight_kg = number();
+      return quickReview(r);
+    case "quickPressure": {
+      const bp = /^(\d+)\s*\/\s*(\d+)(?:\s+(\d+))?$/.exec(text);
+      if (!bp) {
+        throw Error("請輸入上壓/下壓，例如 120/80。要加心率可輸入 120/80 70。");
+      }
+      r.systolic = +bp[1];
+      r.diastolic = +bp[2];
+      if (bp[3]) r.pulse = +bp[3];
+      return quickReview(r);
+    }
     case "date": {
       const yesterday = new Date(today() + "T00:00:00Z");
       yesterday.setUTCDate(yesterday.getUTCDate() - 1);
@@ -216,27 +354,29 @@ export function chatStep(
       validateReading({ ...r, weight_kg: 60 });
       return {
         draft: { step: "kind", reading: r },
-        reply: "這次是「空腹」、「餐後」還是「其他」？",
+        reply: "請點選空腹、餐後、睡前或其他。",
       };
     }
     case "kind": {
-      const k = ({ 空腹: "fasting", 餐後: "postmeal", 其他: "other" } as Record<
+      const k = ({
+        空腹: "fasting",
+        餐後: "postmeal",
+        睡前: "bedtime",
+        其他: "other",
+      } as Record<
         string,
         Kind
       >)[text];
-      if (!k) throw Error("請回覆空腹、餐後或其他");
+      if (!k) throw Error("請點選空腹、餐後、睡前或其他");
       r.measurement_type = k;
       return {
         draft: { step: "glucose", reading: r },
-        reply:
-          "請輸入血糖與單位，例如「100 mg/dL」或「5.6 mmol/L」，沒有量請回覆「略過」。",
+        reply: "血糖多少？直接輸入數字，例如 5.6。沒有量請點「略過」。",
       };
     }
     case "glucose": {
       if (!skip) {
-        const m = /^(\d+(?:\.\d+)?)\s*(mg\/dL|mmol\/L)$/.exec(text);
-        if (!m) throw Error("請同時輸入血糖與單位，例如 100 mg/dL");
-        Object.assign(r, glucose(+m[1], m[2]));
+        Object.assign(r, readSugar(text));
         validateReading(r);
       }
       return {
@@ -274,13 +414,31 @@ export function chatStep(
         reply: describe(r) + "\n請回覆「確認儲存」或「取消」。",
       };
     case "confirm":
+      if (text === "改時間") {
+        return {
+          draft: { step: "quickTime", reading: r },
+          reply: "請輸入實際測量時間，例如 14:30。",
+        };
+      }
+      if (text === "加體重") {
+        return {
+          draft: { step: "quickWeight", reading: r },
+          reply: "體重幾公斤？請輸入數字。",
+        };
+      }
+      if (text === "加血壓") {
+        return {
+          draft: { step: "quickPressure", reading: r },
+          reply: "請輸入上壓/下壓，例如 120/80。也可加心率，例如 120/80 70。",
+        };
+      }
       if (text !== "確認儲存") {
         throw Error("資料還沒有儲存，請回覆「確認儲存」或「取消」。");
       }
       return {
         draft: null,
         save: validateReading(r),
-        reply: "已儲存，可以在網頁查看紀錄。",
+        reply: "已儲存。下次量好，直接輸入新的血糖數字即可。",
       };
   }
 }

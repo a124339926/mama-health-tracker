@@ -1,5 +1,6 @@
 import { check, db, required } from "../_shared/server.ts";
 import {
+  buttonsFor,
   chatStep,
   type Draft,
   sha256,
@@ -13,7 +14,11 @@ type Event = {
   source?: { type: string; userId?: string };
   message?: { type: string; text?: string };
 };
-async function reply(token: string, text: string) {
+async function reply(
+  token: string,
+  text: string,
+  labels: string[] = buttonsFor(),
+) {
   const res = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
@@ -25,22 +30,16 @@ async function reply(token: string, text: string) {
       messages: [{
         type: "text",
         text,
-        quickReply: {
-          items: [
-            "登記",
-            "表單",
-            "今天",
-            "昨天",
-            "空腹",
-            "餐後",
-            "略過",
-            "確認儲存",
-            "取消",
-          ].map((label) => ({
-            type: "action",
-            action: { type: "message", label, text: label },
-          })),
-        },
+        ...(labels.length
+          ? {
+            quickReply: {
+              items: labels.map((label) => ({
+                type: "action",
+                action: { type: "message", label, text: label },
+              })),
+            },
+          }
+          : {}),
       }],
     }),
   });
@@ -76,10 +75,19 @@ Deno.serve(async (req) => {
         );
         continue;
       }
+      const account = check(
+        await client.from("line_accounts").select("patient_id").eq(
+          "line_user_id",
+          lid,
+        ).maybeSingle(),
+      );
       if (event.type === "follow" && event.replyToken) {
         await reply(
           event.replyToken,
-          "歡迎使用我的健康日記。請先請家屬在網站產生一次性 LINE 綁定碼，再輸入「綁定 代碼」。綁定後可回覆「登記」或「表單」。",
+          account
+            ? "歡迎回來！直接輸入血糖數字即可。"
+            : "第一次使用，請向家屬取得代碼，再輸入「綁定 代碼」。",
+          account ? buttonsFor() : [],
         );
         continue;
       }
@@ -96,21 +104,18 @@ Deno.serve(async (req) => {
         await reply(
           event.replyToken,
           result.error
-            ? "綁定碼已過期、已使用或帳號已綁定。請回網頁產生新代碼。"
-            : "綁定成功！輸入「登記」開始記錄。提醒預設關閉，可由家屬在網頁開啟。",
+            ? (account
+              ? "這個帳號已連到日記，可以直接輸入血糖數字。"
+              : "代碼無效，請向家屬取得新代碼。")
+            : "已連到日記！直接輸入血糖數字即可。",
         );
         continue;
       }
-      const account = check(
-        await client.from("line_accounts").select("patient_id").eq(
-          "line_user_id",
-          lid,
-        ).maybeSingle(),
-      );
       if (!account) {
         await reply(
           event.replyToken,
-          "請先請家屬在網站產生 LINE 綁定碼，再輸入「綁定 代碼」。",
+          "第一次使用，請向家屬取得代碼，再輸入「綁定 代碼」。",
+          [],
         );
         continue;
       }
@@ -168,9 +173,17 @@ Deno.serve(async (req) => {
           Date.now() - Date.parse(session.updated_at) > 30 * 60 * 1000;
         let next;
         try {
-          next = chatStep(text, stale ? null : session.draft as Draft | null);
+          next = chatStep(
+            text,
+            stale ? null : session.draft as Draft | null,
+            new Date(event.timestamp),
+          );
         } catch (e) {
-          await reply(event.replyToken, (e as Error).message);
+          await reply(
+            event.replyToken,
+            (e as Error).message,
+            buttonsFor(stale ? undefined : session.draft?.step),
+          );
           completed = true;
           break;
         }
@@ -193,7 +206,11 @@ Deno.serve(async (req) => {
             ).single(),
           );
           if (!committed) throw Error("Missing committed event");
-          await reply(event.replyToken, committed.reply);
+          await reply(
+            event.replyToken,
+            committed.reply,
+            buttonsFor(next.draft?.step),
+          );
           completed = true;
           break;
         }
