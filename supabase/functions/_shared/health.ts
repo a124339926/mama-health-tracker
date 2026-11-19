@@ -225,6 +225,17 @@ function readSugar(text: string) {
   if (!m) throw Error("請輸入血糖數字，例如 5.6");
   return glucose(+m[1], m[2]?.toLowerCase() === "mg/dl" ? "mg/dL" : "mmol/L");
 }
+const pressureHint =
+  "請輸入上壓/下壓/心率，例如 120/80/70。只量血壓可輸入 120/80。";
+function readPressure(text: string) {
+  const match = /^(\d+)\s*\/\s*(\d+)(?:(?:\s*\/\s*|\s+)(\d+))?$/.exec(text);
+  if (!match) throw Error(pressureHint);
+  return {
+    systolic: Number(match[1]),
+    diastolic: Number(match[2]),
+    ...(match[3] ? { pulse: Number(match[3]) } : {}),
+  };
+}
 export function chatStep(
   text: string,
   draft: Draft | null,
@@ -245,9 +256,9 @@ export function chatStep(
   }
   if (text.startsWith("快速 ")) {
     const m =
-      /^快速 (\d{4}-\d{2}-\d{2}) (空腹|餐後|睡前|其他) (\d+(?:\.\d+)?) (mmol\/L|mg\/dL) (\d+(?:\.\d+)?) (\d+)\/(\d+) (\d+)$/
+      /^快速 (\d{4}-\d{2}-\d{2}) (空腹|餐後|睡前|其他) (\d+(?:\.\d+)?) (mmol\/L|mg\/dL) (\d+(?:\.\d+)?) (\d+)\s*\/\s*(\d+)(?:\s*\/\s*|\s+)(\d+)$/
         .exec(text);
-    if (!m) throw Error("格式：快速 2026-11-16 空腹 100 mg/dL 60 120/80 70");
+    if (!m) throw Error("格式：快速 2026-11-16 空腹 100 mg/dL 60 120/80/70");
     const r = validateReading({
       ...emptyReading(),
       measured_on: m[1],
@@ -285,7 +296,7 @@ export function chatStep(
         }
         : {
           draft: { step: "quickPressure", reading: r },
-          reply: "請輸入上壓/下壓，例如 120/80。也可加心率，例如 120/80 70。",
+          reply: pressureHint,
         };
     }
     if (kinds[text]) {
@@ -296,6 +307,13 @@ export function chatStep(
         },
         reply: "血糖多少？直接輸入數字，例如 5.6。",
       };
+    }
+    if (/^\d+\s*\//.test(text)) {
+      return quickReview({
+        ...r,
+        measurement_type: "other",
+        ...readPressure(text),
+      });
     }
     if (/^\d/.test(text)) {
       Object.assign(r, readSugar(text));
@@ -334,13 +352,7 @@ export function chatStep(
       r.weight_kg = number();
       return quickReview(r);
     case "quickPressure": {
-      const bp = /^(\d+)\s*\/\s*(\d+)(?:\s+(\d+))?$/.exec(text);
-      if (!bp) {
-        throw Error("請輸入上壓/下壓，例如 120/80。要加心率可輸入 120/80 70。");
-      }
-      r.systolic = +bp[1];
-      r.diastolic = +bp[2];
-      if (bp[3]) r.pulse = +bp[3];
+      Object.assign(r, readPressure(text));
       return quickReview(r);
     }
     case "date": {
@@ -391,14 +403,13 @@ export function chatStep(
       }
       return {
         draft: { step: "pressure", reading: r },
-        reply: "血壓多少？例如「120/80」，或「略過」。",
+        reply: pressureHint + " 沒有量請點「略過」。",
       };
     case "pressure": {
       if (!skip) {
-        const m = /^(\d+)\/(\d+)$/.exec(text);
-        if (!m) throw Error("請用 120/80 格式填血壓");
-        r.systolic = +m[1];
-        r.diastolic = +m[2];
+        const pressure = readPressure(text);
+        Object.assign(r, pressure);
+        if (pressure.pulse !== undefined) return quickReview(r);
         validateReading(r);
       }
       return {
@@ -429,7 +440,7 @@ export function chatStep(
       if (text === "加血壓") {
         return {
           draft: { step: "quickPressure", reading: r },
-          reply: "請輸入上壓/下壓，例如 120/80。也可加心率，例如 120/80 70。",
+          reply: pressureHint,
         };
       }
       if (text !== "確認儲存") {

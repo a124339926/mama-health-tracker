@@ -115,3 +115,23 @@ it("saves each sugar separately with Taipei time, optional extras, and no bindin
     "confirm",
   );
 });
+
+it("reads pressure and pulse separated by slashes at each chat entry point", () => {
+  const bloodPressure = { systolic: 120, diastolic: 80, pulse: 70 };
+  const guided = { step: "pressure" as const, reading: emptyReading() };
+  for (const draft of [null, chatStep("量血壓", null).draft, guided]) {
+    for (const value of ["120/80/70", "１２０／８０／７０", "120/80 70"]) {
+      const result = chatStep(value, draft);
+      expect(result.draft?.step).toBe("confirm");
+      expect(result.draft?.reading).toMatchObject(bloodPressure);
+      expect(result.save).toBeUndefined();
+    }
+  }
+  expect(chatStep("120/80", null).draft?.reading.pulse).toBeNull();
+  expect(chatStep("120/80", guided).draft?.step).toBe("pulse");
+  expect(
+    chatStep("快速 " + today() + " 空腹 100 mg/dL 60 120/80/70", null).draft
+      ?.reading,
+  ).toMatchObject(bloodPressure);
+  expect(() => chatStep("120/80/70/1", null)).toThrow();
+});
