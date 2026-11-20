@@ -449,7 +449,7 @@ export function chatStep(
       return {
         draft: null,
         save: validateReading(r),
-        reply: "已儲存。下次量好，直接輸入新的血糖數字即可。",
+        reply: "已儲存",
       };
   }
 }

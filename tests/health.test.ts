@@ -42,6 +42,7 @@ describe("shared health boundary", () => {
   it("does not save until explicit confirmation, and cancel discards draft", () => {
     const next = chatStep(`快速 ${today()} 空腹 100 mg/dL 60 120/80 70`, null);
     expect(next.save).toBeUndefined();
+    expect(chatStep("確認儲存", next.draft).reply).toBe("已儲存");
     expect(next.draft?.step).toBe("confirm");
     expect(chatStep("確認儲存", next.draft).save?.glucose_mg_reported).toBe(
       100,

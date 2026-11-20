@@ -30,7 +30,7 @@ async function reply(
       messages: [{
         type: "text",
         text,
-        ...(labels.length
+        ...(text !== "已儲存" && labels.length
           ? {
             quickReply: {
               items: labels.map((label) => ({
